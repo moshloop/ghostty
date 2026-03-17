@@ -26,3 +26,7 @@ clean:
 		macos/build \
 		macos/GhosttyKit.xcframework
 .PHONY: clean
+
+
+build:
+	zig build -Demit-macos-app=false
