@@ -80,13 +80,6 @@ jobs:
           zip -9 -r --symlinks ../../../ghostty-macos-universal.zip Ghostty.app
           zip -9 -r --symlinks ../../../ghostty-macos-universal-dsym.zip Ghostty.app.dSYM/
 
-      - name: Create DMG
-        run: |
-          npm install --global create-dmg
-          create-dmg \
-            ./macos/build/Release/Ghostty.app \
-            ./
-          mv ./Ghostty*.dmg ./Ghostty.dmg
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -98,4 +91,3 @@ jobs:
           files: |
             ghostty-macos-universal.zip
             ghostty-macos-universal-dsym.zip
-            Ghostty.dmg
