@@ -1,0 +1,101 @@
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+name: Release
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build-macos:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      ZIG_LOCAL_CACHE_DIR: /Users/runner/zig/local-cache
+      ZIG_GLOBAL_CACHE_DIR: /Users/runner/zig/global-cache
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract build info
+        id: build_info
+        run: |
+          echo "build=$(git rev-list --count HEAD)" >> $GITHUB_OUTPUT
+          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "commit_long=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Cache Zig
+        uses: actions/cache@v4
+        with:
+          path: |
+            /Users/runner/zig/local-cache
+            /Users/runner/zig/global-cache
+          key: macos-zig-${{ hashFiles('build.zig.zon') }}
+          restore-keys: macos-zig-
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: XCode Select
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+
+      - name: Setup Sparkle
+        env:
+          SPARKLE_VERSION: 2.9.0
+        run: |
+          mkdir -p .action/sparkle
+          cd .action/sparkle
+          curl -L https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-for-Swift-Package-Manager.zip > sparkle.zip
+          unzip sparkle.zip
+          echo "$(pwd)/bin" >> $GITHUB_PATH
+
+      - name: Build GhosttyKit
+        run: nix develop -c zig build -Doptimize=ReleaseFast -Demit-macos-app=false
+
+      - name: Build Ghostty.app
+        run: |
+          cd macos
+          xcodebuild -target Ghostty -configuration Release \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Update Info.plist
+        env:
+          GHOSTTY_BUILD: ${{ steps.build_info.outputs.build }}
+          GHOSTTY_COMMIT: ${{ steps.build_info.outputs.commit }}
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :GhosttyCommit $GHOSTTY_COMMIT" "macos/build/Release/Ghostty.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GHOSTTY_BUILD" "macos/build/Release/Ghostty.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $GHOSTTY_COMMIT" "macos/build/Release/Ghostty.app/Contents/Info.plist"
+
+      - name: Zip App
+        run: |
+          cd macos/build/Release
+          zip -9 -r --symlinks ../../../ghostty-macos-universal.zip Ghostty.app
+          zip -9 -r --symlinks ../../../ghostty-macos-universal-dsym.zip Ghostty.app.dSYM/
+
+      - name: Create DMG
+        run: |
+          npm install --global create-dmg
+          create-dmg \
+            ./macos/build/Release/Ghostty.app \
+            ./
+          mv ./Ghostty*.dmg ./Ghostty.dmg
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Ghostty ${{ steps.build_info.outputs.commit }}"
+          prerelease: true
+          tag_name: tip
+          target_commitish: ${{ github.sha }}
+          files: |
+            ghostty-macos-universal.zip
+            ghostty-macos-universal-dsym.zip
+            Ghostty.dmg
