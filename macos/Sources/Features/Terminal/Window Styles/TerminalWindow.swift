@@ -26,7 +26,7 @@ class TerminalWindow: NSWindow {
 
     /// Visual indicator that mirrors the selected tab color.
     private lazy var tabColorIndicator: NSHostingView<TabColorIndicatorView> = {
-        let view = NSHostingView(rootView: TabColorIndicatorView(tabColor: tabColor))
+        let view = NSHostingView(rootView: TabColorIndicatorView(tabColor: tabColor, isActive: isMainWindow))
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -63,9 +63,14 @@ class TerminalWindow: NSWindow {
     var tabColor: TerminalTabColor = .none {
         didSet {
             guard tabColor != oldValue else { return }
-            tabColorIndicator.rootView = TabColorIndicatorView(tabColor: tabColor)
+            updateTabColorIndicator()
             invalidateRestorableState()
         }
+    }
+
+    /// Updates the tab color indicator view to reflect the current tab color and active state.
+    private func updateTabColorIndicator() {
+        tabColorIndicator.rootView = TabColorIndicatorView(tabColor: tabColor, isActive: isMainWindow)
     }
 
     // MARK: NSWindow Overrides
@@ -158,7 +163,7 @@ class TerminalWindow: NSWindow {
         // Setup the accessory view for tabs that shows our keyboard shortcuts,
         // zoomed state, etc. Note I tried to use SwiftUI here but ran into issues
         // where buttons were not clickable.
-        tabColorIndicator.rootView = TabColorIndicatorView(tabColor: tabColor)
+        tabColorIndicator.rootView = TabColorIndicatorView(tabColor: tabColor, isActive: isMainWindow)
 
         let stackView = NSStackView()
         stackView.orientation = .horizontal
@@ -215,11 +220,13 @@ class TerminalWindow: NSWindow {
             tabBarDidDisappear()
         }
         viewModel.isMainWindow = true
+        updateTabColorIndicator()
     }
 
     override func resignMain() {
         super.resignMain()
         viewModel.isMainWindow = false
+        updateTabColorIndicator()
     }
 
     @discardableResult
@@ -675,21 +682,25 @@ extension TerminalWindow {
 
 }
 
-/// A small circle indicator displayed in the tab accessory view that shows
-/// the user-assigned tab color. When no color is set, the view is hidden.
+/// A colored indicator displayed in the tab accessory view that shows
+/// the user-assigned tab color. The indicator is only visible when the
+/// tab is active; inactive tabs show no color indicator.
 private struct TabColorIndicatorView: View {
     /// The tab color to display.
     let tabColor: TerminalTabColor
 
+    /// Whether the tab is currently active (selected).
+    let isActive: Bool
+
     var body: some View {
-        if let color = tabColor.displayColor {
-            Circle()
+        if isActive, let color = tabColor.displayColor {
+            RoundedRectangle(cornerRadius: 4)
                 .fill(Color(color))
-                .frame(width: 6, height: 6)
+                .frame(width: 14, height: 8)
         } else {
-            Circle()
+            RoundedRectangle(cornerRadius: 4)
                 .fill(Color.clear)
-                .frame(width: 6, height: 6)
+                .frame(width: 14, height: 8)
                 .hidden()
         }
     }
